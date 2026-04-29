@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      width: 350px;
+      min-height: 400px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    h1::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: #4ade80;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #4ade80;
+    }
+
+    .section {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 120px;
+      background: #16213e;
+      border: 1px solid #2d3748;
+      border-radius: 8px;
+      color: #e0e0e0;
+      padding: 12px;
+      font-size: 14px;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    textarea:focus {
+      border-color: #4ade80;
+    }
+
+    textarea:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .slider-container {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .slider-header label {
+      margin: 0;
+    }
+
+    .wpm-value {
+      font-size: 16px;
+      font-weight: 600;
+      color: #4ade80;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 6px;
+      -webkit-appearance: none;
+      background: #2d3748;
+      border-radius: 3px;
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #4ade80;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #666;
+      margin-top: 6px;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .checkbox-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .checkbox-wrapper input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: #4ade80;
+      cursor: pointer;
+    }
+
+    .checkbox-wrapper span {
+      font-size: 14px;
+    }
+
+    .typo-hint {
+      font-size: 10px;
+      color: #666;
+    }
+
+    .buttons {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-start {
+      background: #4ade80;
+      color: #0f172a;
+    }
+
+    .btn-start:hover:not(:disabled) {
+      background: #22c55e;
+    }
+
+    .btn-pause {
+      background: #f59e0b;
+      color: #0f172a;
+    }
+
+    .btn-pause:hover:not(:disabled) {
+      background: #d97706;
+    }
+
+    .btn-stop {
+      background: #ef4444;
+      color: #fff;
+    }
+
+    .btn-stop:hover:not(:disabled) {
+      background: #dc2626;
+    }
+
+    .status-bar {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+
+    .status-text {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .progress-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .progress-bar {
+      flex: 1;
+      height: 8px;
+      background: #2d3748;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4ade80, #22c55e);
+      border-radius: 4px;
+      transition: width 0.1s;
+      width: 0%;
+    }
+
+    .progress-count {
+      font-size: 12px;
+      color: #4ade80;
+      font-weight: 600;
+      min-width: 70px;
+      text-align: right;
+    }
+
+    .error-message {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: #ef4444;
+      display: none;
+    }
+
+    .error-message.visible {
+      display: block;
+    }
+
+    .debug-section {
+      background: #16213e;
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 16px;
+    }
+
+    .debug-section h3 {
+      font-size: 11px;
+      color: #666;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .debug-info {
+      font-family: monospace;
+      font-size: 11px;
+      color: #888;
+      word-break: break-all;
+    }
+
+    .debug-btn {
+      background: #2d3748;
+      color: #888;
+      font-size: 10px;
+      padding: 6px 10px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>AutoTyper Lite</h1>
+
+  <div class="error-message" id="errorMessage"></div>
+
+  <div class="section">
+    <label>Text to Type</label>
+    <textarea id="textInput" placeholder="Paste or type your text here..."></textarea>
+  </div>
+
+  <div class="section">
+    <div class="slider-container">
+      <div class="slider-header">
+        <label>Typing Speed</label>
+        <span class="wpm-value" id="wpmValue">60 WPM</span>
+      </div>
+      <input type="range" id="speedSlider" min="20" max="200" value="60">
+      <div class="slider-labels">
+        <span>Slow</span>
+        <span>Fast</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="checkbox-row">
+      <div class="checkbox-wrapper">
+        <input type="checkbox" id="typoToggle">
+        <span>Include Typos</span>
+      </div>
+      <span class="typo-hint">Occasional mistakes</span>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button class="btn-start" id="startBtn">Start</button>
+    <button class="btn-pause" id="pauseBtn" disabled>Pause</button>
+    <button class="btn-stop" id="stopBtn" disabled>Stop</button>
+  </div>
+
+  <div class="status-bar">
+    <div class="status-text" id="statusText">Ready to type</div>
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <span class="progress-count" id="progressCount">0/0</span>
+    </div>
+  </div>
+
+  <div class="debug-section">
+    <h3>Focused Element Debug</h3>
+    <div class="debug-info" id="debugInfo">Click "Check Field" to detect</div>
+    <button class="debug-btn" id="checkFieldBtn">Check Field</button>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
