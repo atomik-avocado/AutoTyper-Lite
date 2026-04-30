@@ -1,102 +1,60 @@
 # AutoTyper Lite
 
-A Chrome extension that simulates human-like typing into any input field or text area on any webpage.
+AutoTyper Lite is a free Manifest V3 Chrome extension that simulates human-like typing into the currently focused text field, textarea, contenteditable editor, or Google Docs surface.
 
-## Features
+## Permission Audit
 
-- **Side Panel UI** - Opens as a side panel for easy access while working
-- **Typing Simulation** - Types character-by-character into the focused input field
-- **Adjustable Speed** - Slider from 20 WPM to 200 WPM
-- **Human-like Randomness** - Adds ±10-30ms random variance between keystrokes
-- **Optional Typos** - Occasionally inserts wrong characters then backspaces and corrects
-- **Pause/Resume/Stop** - Full control over the typing process
-- **Progress Indicator** - Shows characters typed vs total
-- **ContentEditable Support** - Works with Gmail, WhatsApp Web, Google Docs, and other rich text editors
+The extension declares these permissions in `manifest.json`:
 
-## Installation
+- `scripting`: Injects `content.js` again if Chrome unloads it or a page was opened before installation.
+- `activeTab`: Allows access to the current tab after the user opens the extension and starts typing.
+- `storage`: Saves the last text, WPM setting, and typo toggle in `chrome.storage.local`.
+- `tabs`: Queries the active tab and sends commands/status between the side panel and content script.
+- `sidePanel`: Loads AutoTyper Lite in Chrome's side panel instead of a transient popup.
 
-1. Download or clone this repository
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable **Developer mode** (toggle in the top-right corner)
-4. Click **Load unpacked**
-5. Select the `auto-typer-lite` folder
-6. The extension icon will appear in your Chrome toolbar
+The extension declares these host permissions:
 
-## Usage
+- `https://docs.google.com/*`: Google Docs compatibility.
+- `https://mail.google.com/*`: Gmail compose compatibility.
+- `https://web.whatsapp.com/*`: WhatsApp Web compatibility.
+- `<all_urls>`: Catch-all support for other webpages and iframe-hosted editors.
 
-### Opening the Side Panel
-
-1. Click the extension icon in your Chrome toolbar
-2. Click the **pin icon** to keep the side panel open
-3. Or right-click the extension icon → **Open side panel**
-
-### Typing Text
-
-1. Click inside a text field on any webpage (input, textarea, or rich text editor like Google Docs)
-2. Enter your text in the side panel textarea
-3. Adjust WPM speed if needed
-4. Optionally enable "Include Typos"
-5. Click **Start**
-6. Watch as the extension types into the focused field
-
-### Debug Tool
-
-If typing doesn't work, use the **Check Field** button in the debug section to see:
-- Which element is currently focused
-- Whether it's detected as a valid input field
-- The element's contentEditable status
-
-## Supported Elements
-
-- `<input type="text">`
-- `<input type="password">`
-- `<input type="email">`
-- `<textarea>`
-- ContentEditable divs (Google Docs, Gmail compose, WhatsApp Web, etc.)
-
-## How It Works
-
-The extension:
-1. Detects the currently focused input field when you click Start
-2. Sends the text and settings to a content script
-3. The content script simulates character-by-character input with:
-   - Variable delays based on WPM setting
-   - Random ±10-30ms variance for human-like feel
-   - Optional typo-and-backspace sequences
-4. Uses `document.execCommand('insertText')` for contenteditable elements for maximum compatibility
-5. Dispatches `input` and `change` events for React/Vue/Angular compatibility
+The content script is declared with `run_at: "document_idle"` and `all_frames: true` so it can run in nested frames, including editors that place their input target inside iframes.
 
 ## Files
 
-```
-auto-typer-lite/
-├── manifest.json       # Extension manifest (Manifest V3)
-├── sidepanel.html      # Side panel UI
-├── sidepanel.js        # Side panel logic
-├── content.js          # Content script for typing simulation
-├── background.js       # Service worker for message routing
-├── icon.png            # Extension icon
-└── README.md           # This file
-```
+- `manifest.json`: Chrome MV3 manifest and permission declarations.
+- `popup.html`: Side panel UI.
+- `popup.js`: Side panel state, storage, active-tab messaging, and reinjection fallback.
+- `content.js`: Typing engine and field detection logic.
+- `background.js`: Service worker that opens the side panel from the toolbar action and pauses typing when the panel disconnects.
 
-## Permissions
+## Load in Chrome
 
-- `storage` - For persisting user settings
-- `activeTab` - For accessing the active tab
-- `scripting` - For executing content scripts
-- `sidePanel` - For opening as a side panel
+1. Open Chrome and go to `chrome://extensions`.
+2. Enable `Developer mode`.
+3. Click `Load unpacked`.
+4. Select the `AutoTyper-Lite` folder.
+5. Pin the extension if you want quick access from the toolbar.
+6. Click the toolbar icon to open AutoTyper Lite in Chrome's side panel.
 
-## Troubleshooting
+## Use
 
-**"Please click on a text field first"**
-- Make sure you've clicked inside a text field before pressing Start
-- Use the "Check Field" button to verify the extension can see the element
+1. Click into a text field, textarea, editor, Gmail compose area, WhatsApp message box, or Google Docs document.
+2. Open the AutoTyper Lite side panel from the toolbar icon.
+3. Paste or type the text to enter.
+4. Adjust the WPM slider from 20 to 200 WPM.
+5. Optionally enable human-like typo correction.
+6. Choose `Light` or `Dark` mode with the theme toggle.
+7. Click `Start`.
+8. Use `Pause`, `Resume`, or `Stop` from the side panel while typing is active.
 
-**Typing doesn't appear in Google Docs**
-- Click inside the Google Docs document first
-- Make sure the cursor is blinking in the document
-- Try clicking directly on the text area in the document
+If typing is paused, `Resume` continues from the last typed character rather than restarting. If the WPM slider is changed while paused, the new speed is applied when typing resumes.
 
-**Extension can't detect the field**
-- Refresh the page after loading the extension
-- Check the debug section for information about what's detected
+If the side panel is closed while typing, AutoTyper Lite pauses automatically.
+
+## Notes and Limits
+
+- Chrome blocks extensions from running on internal pages such as `chrome://` pages and the Chrome Web Store.
+- Google Docs uses a keyboard-event layer rather than normal input fields, so AutoTyper Lite uses event dispatch only on Docs and never assigns `.value`.
+- Some sites intentionally block synthetic input events. The extension uses the safest offline-only approach available to a Chrome extension, but hostile or heavily sandboxed pages may still reject automation.

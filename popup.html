@@ -1,316 +1,327 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=400">
-  <style>
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoTyper Lite</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #1c1c1c;
+        --panel: #232323;
+        --text: #e8e6e1;
+        --muted: #8a8780;
+        --border: #353330;
+        --accent: #d97757;
+        --danger: #c9695e;
+        --field: #1a1a1a;
+      }
 
-    body {
-      width: 400px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #1a1a2e;
-      color: #e0e0e0;
-      padding: 16px;
-    }
+      html[data-theme="light"] {
+        color-scheme: light;
+        --bg: #f5f1ea;
+        --panel: #faf7f2;
+        --text: #1f1d1a;
+        --muted: #7a766e;
+        --border: #d9d3c7;
+        --field: #ffffff;
+      }
 
-    h1 {
-      font-size: 18px;
-      font-weight: 600;
-      color: #fff;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+      html[data-theme="dark"] {
+        color-scheme: dark;
+      }
 
-    h1::before {
-      content: '';
-      width: 8px;
-      height: 8px;
-      background: #4ade80;
-      border-radius: 50%;
-      box-shadow: 0 0 8px #4ade80;
-    }
+      * { box-sizing: border-box; }
 
-    .section {
-      margin-bottom: 16px;
-    }
+      body {
+        width: 100%;
+        min-width: 320px;
+        margin: 0;
+        padding: 18px 16px 20px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+      }
 
-    label {
-      display: block;
-      font-size: 12px;
-      color: #888;
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
+      .shell {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
 
-    textarea {
-      width: 100%;
-      height: 120px;
-      background: #16213e;
-      border: 1px solid #2d3748;
-      border-radius: 8px;
-      color: #e0e0e0;
-      padding: 12px;
-      font-size: 14px;
-      resize: none;
-      outline: none;
-      transition: border-color 0.2s;
-    }
+      .header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
+      }
 
-    textarea:focus {
-      border-color: #4ade80;
-    }
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0;
+      }
 
-    textarea:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
+      h1 .dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        margin-right: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        vertical-align: 1px;
+      }
 
-    .slider-container {
-      background: #16213e;
-      border-radius: 8px;
-      padding: 12px 16px;
-    }
+      .meta {
+        color: var(--muted);
+        font-size: 11px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
 
-    .slider-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
+      .theme-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 0;
+        background: none;
+        border: 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        cursor: pointer;
+      }
 
-    .slider-header label {
-      margin: 0;
-    }
+      .theme-toggle:hover { color: var(--text); }
 
-    .wpm-value {
-      font-size: 16px;
-      font-weight: 600;
-      color: #4ade80;
-    }
+      .theme-toggle input {
+        appearance: none;
+        width: 22px;
+        height: 12px;
+        margin: 0;
+        border-radius: 6px;
+        background: var(--border);
+        position: relative;
+        cursor: pointer;
+      }
 
-    input[type="range"] {
-      width: 100%;
-      height: 6px;
-      -webkit-appearance: none;
-      background: #2d3748;
-      border-radius: 3px;
-      outline: none;
-    }
+      .theme-toggle input::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--text);
+        transition: transform 120ms ease;
+      }
 
-    input[type="range"]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      width: 18px;
-      height: 18px;
-      background: #4ade80;
-      border-radius: 50%;
-      cursor: pointer;
-      box-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
-    }
+      .theme-toggle input:checked::after {
+        transform: translateX(10px);
+      }
 
-    .slider-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 10px;
-      color: #666;
-      margin-top: 6px;
-    }
+      .field-label {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
 
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: #16213e;
-      border-radius: 8px;
-      padding: 12px 16px;
-    }
+      textarea {
+        width: 100%;
+        min-height: 130px;
+        resize: vertical;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        outline: none;
+        padding: 10px 11px;
+        background: var(--field);
+        color: var(--text);
+        font: 13px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
 
-    .checkbox-wrapper {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+      textarea::placeholder { color: var(--muted); }
 
-    .checkbox-wrapper input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
-      accent-color: #4ade80;
-      cursor: pointer;
-    }
+      textarea:focus {
+        border-color: var(--accent);
+      }
 
-    .checkbox-wrapper span {
-      font-size: 14px;
-    }
+      .controls {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
 
-    .typo-hint {
-      font-size: 10px;
-      color: #666;
-    }
+      .speed-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+      }
 
-    .buttons {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-    }
+      .speed-row .field-label { margin: 0; }
 
-    button {
-      flex: 1;
-      padding: 12px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
+      .speed-value {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 12px;
+        color: var(--text);
+      }
 
-    button:disabled {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
+      input[type="range"] {
+        width: 100%;
+        accent-color: var(--accent);
+        margin: 0;
+      }
 
-    .btn-start {
-      background: #4ade80;
-      color: #0f172a;
-    }
+      .check-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        cursor: pointer;
+      }
 
-    .btn-start:hover:not(:disabled) {
-      background: #22c55e;
-    }
+      .check-row input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        margin: 1px 0 0;
+        accent-color: var(--accent);
+        flex-shrink: 0;
+      }
 
-    .btn-pause {
-      background: #f59e0b;
-      color: #0f172a;
-    }
+      .check-row span {
+        color: var(--muted);
+        font-size: 12px;
+      }
 
-    .btn-pause:hover:not(:disabled) {
-      background: #d97706;
-    }
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+      }
 
-    .btn-stop {
-      background: #ef4444;
-      color: #fff;
-    }
+      button {
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        border-radius: 4px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+        transition: border-color 120ms ease, background 120ms ease;
+      }
 
-    .btn-stop:hover:not(:disabled) {
-      background: #dc2626;
-    }
+      button:hover:not(:disabled) {
+        border-color: var(--muted);
+      }
 
-    .status-bar {
-      background: #16213e;
-      border-radius: 8px;
-      padding: 12px 16px;
-    }
+      #startButton:not(:disabled) {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #1a1a1a;
+        font-weight: 500;
+      }
 
-    .status-text {
-      font-size: 12px;
-      color: #888;
-      margin-bottom: 8px;
-    }
+      #stopButton:not(:disabled) {
+        color: var(--danger);
+      }
 
-    .progress-container {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
 
-    .progress-bar {
-      flex: 1;
-      height: 8px;
-      background: #2d3748;
-      border-radius: 4px;
-      overflow: hidden;
-    }
+      .notice {
+        display: none;
+        padding: 7px 10px;
+        font-size: 11px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        color: var(--muted);
+        border-left: 2px solid var(--accent);
+        background: var(--panel);
+      }
 
-    .progress-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #4ade80, #22c55e);
-      border-radius: 4px;
-      transition: width 0.1s;
-      width: 0%;
-    }
+      .notice.visible { display: block; }
 
-    .progress-count {
-      font-size: 12px;
-      color: #4ade80;
-      font-weight: 600;
-      min-width: 70px;
-      text-align: right;
-    }
+      .footer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding-top: 10px;
+        border-top: 1px solid var(--border);
+      }
 
-    .error-message {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 16px;
-      font-size: 13px;
-      color: #ef4444;
-      display: none;
-    }
+      .status {
+        flex: 1;
+        color: var(--muted);
+        font-size: 11px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
 
-    .error-message.visible {
-      display: block;
-    }
-  </style>
-</head>
-<body>
-  <h1>AutoTyper Lite</h1>
+      progress {
+        width: 80px;
+        height: 3px;
+        border: 0;
+        background: var(--border);
+        border-radius: 0;
+      }
 
-  <div class="error-message" id="errorMessage"></div>
-
-  <div class="section">
-    <label>Text to Type</label>
-    <textarea id="textInput" placeholder="Paste or type your text here..."></textarea>
-  </div>
-
-  <div class="section">
-    <div class="slider-container">
-      <div class="slider-header">
-        <label>Typing Speed</label>
-        <span class="wpm-value" id="wpmValue">60 WPM</span>
+      progress::-webkit-progress-bar { background: var(--border); }
+      progress::-webkit-progress-value { background: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="header">
+        <h1><span class="dot"></span>AutoTyper Lite</h1>
+        <label class="theme-toggle" for="themeToggle">
+          <span id="themeLabel">dark</span>
+          <input id="themeToggle" type="checkbox">
+        </label>
       </div>
-      <input type="range" id="speedSlider" min="20" max="200" value="60">
-      <div class="slider-labels">
-        <span>Slow</span>
-        <span>Fast</span>
+
+      <div id="docsNotice" class="notice">google docs mode</div>
+
+      <div>
+        <label class="field-label" for="textInput">Text</label>
+        <textarea id="textInput" spellcheck="false" placeholder="Type or paste here..."></textarea>
       </div>
-    </div>
-  </div>
 
-  <div class="section">
-    <div class="checkbox-row">
-      <div class="checkbox-wrapper">
-        <input type="checkbox" id="typoToggle">
-        <span>Include Typos</span>
+      <div class="controls">
+        <div>
+          <div class="speed-row">
+            <label class="field-label" for="speedRange">Speed</label>
+            <span id="speedValue" class="speed-value">80 wpm</span>
+          </div>
+          <input id="speedRange" type="range" min="20" max="200" step="1" value="80">
+        </div>
+        <label class="check-row" for="typoToggle">
+          <input id="typoToggle" type="checkbox">
+          <span>Make occasional typos and correct them</span>
+        </label>
       </div>
-      <span class="typo-hint">Occasional mistakes & corrections</span>
-    </div>
-  </div>
 
-  <div class="buttons">
-    <button class="btn-start" id="startBtn">Start</button>
-    <button class="btn-pause" id="pauseBtn" disabled>Pause</button>
-    <button class="btn-stop" id="stopBtn" disabled>Stop</button>
-  </div>
-
-  <div class="status-bar">
-    <div class="status-text" id="statusText">Ready to type</div>
-    <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill"></div>
+      <div class="actions">
+        <button id="startButton">Start</button>
+        <button id="pauseButton" disabled>Pause</button>
+        <button id="stopButton" disabled>Stop</button>
       </div>
-      <span class="progress-count" id="progressCount">0/0</span>
-    </div>
-  </div>
 
-  <script src="popup.js"></script>
-</body>
+      <div class="footer">
+        <div id="statusBar" class="status">click a text field, then start</div>
+        <progress id="progressBar" max="1" value="0"></progress>
+      </div>
+    </main>
+
+    <script src="popup.js"></script>
+  </body>
 </html>

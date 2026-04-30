@@ -1,336 +1,625 @@
-(function() {
-  let typingState = {
-    isTyping: false,
-    isPaused: false,
-    text: '',
+(() => {
+  "use strict";
+
+  if (window.__AUTO_TYPER_LITE_LOADED__) {
+    return;
+  }
+  window.__AUTO_TYPER_LITE_LOADED__ = true;
+
+  const MESSAGE_SOURCE = "autotyper-lite";
+  const TYPEABLE_INPUT_TYPES = new Set([
+    "text",
+    "email",
+    "search",
+    "url",
+    "tel",
+    "password"
+  ]);
+
+  const state = {
+    active: false,
+    paused: false,
+    stopped: true,
+    text: "",
     index: 0,
-    wpm: 60,
-    includeTypos: false,
-    timeoutId: null,
-    targetElement: null
+    total: 0,
+    wpm: 80,
+    typos: false,
+    target: null,
+    strategy: null,
+    timer: 0
   };
 
-  function getDelayForChar(wpm) {
-    const baseDelay = 60000 / (wpm * 5);
-    const variance = 10 + Math.random() * 20;
-    return baseDelay + (Math.random() < 0.5 ? -variance : variance);
+  function sendStatus(extra = {}) {
+    chrome.runtime.sendMessage({
+      source: MESSAGE_SOURCE,
+      type: "status",
+      state: state.paused ? "paused" : state.active ? "typing" : state.stopped ? "stopped" : "done",
+      typed: state.index,
+      total: state.total,
+      ...extra
+    }).catch(() => {});
   }
 
-  function isInputOrTextarea(el) {
-    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
-  }
-
-  function isEditable(el) {
-    if (!el) return false;
-    if (isInputOrTextarea(el)) return true;
-    if (el.isContentEditable === 'true' || el.contentEditable === 'true') return true;
-
-    let parent = el.parentElement;
-    while (parent) {
-      if (parent.isContentEditable === 'true' || parent.contentEditable === 'true') {
-        return true;
-      }
-      parent = parent.parentElement;
+  function stopTimer() {
+    if (state.timer) {
+      clearTimeout(state.timer);
+      state.timer = 0;
     }
-    return false;
   }
 
-  function findEditableElement() {
-    const el = document.activeElement;
-    if (isEditable(el)) return el;
+  function resetRun() {
+    stopTimer();
+    state.active = false;
+    state.paused = false;
+    state.stopped = true;
+    state.text = "";
+    state.index = 0;
+    state.total = 0;
+    state.target = null;
+    state.strategy = null;
+  }
 
-    let parent = el?.parentElement;
-    while (parent) {
-      if (isEditable(parent)) return parent;
-      parent = parent.parentElement;
+  function isGoogleDocsPage() {
+    return location.hostname === "docs.google.com";
+  }
+
+  function isEditableInput(element) {
+    if (!(element instanceof HTMLInputElement)) {
+      return false;
+    }
+    const type = (element.getAttribute("type") || "text").toLowerCase();
+    return TYPEABLE_INPUT_TYPES.has(type) && !element.disabled && !element.readOnly;
+  }
+
+  function isTextArea(element) {
+    return element instanceof HTMLTextAreaElement && !element.disabled && !element.readOnly;
+  }
+
+  function isContentEditable(element) {
+    return element instanceof HTMLElement && element.isContentEditable;
+  }
+
+  function composedActiveElement(root = document) {
+    let active = root.activeElement;
+    while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+      active = active.shadowRoot.activeElement;
+    }
+    return active;
+  }
+
+  function queryShadow(root, selector) {
+    const direct = root.querySelector(selector);
+    if (direct) {
+      return direct;
+    }
+
+    const all = root.querySelectorAll("*");
+    for (const element of all) {
+      if (element.shadowRoot) {
+        const match = queryShadow(element.shadowRoot, selector);
+        if (match) {
+          return match;
+        }
+      }
     }
     return null;
   }
 
-  function typeCharStandard(char, target) {
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      target.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-      'value'
-    )?.set;
+  function findTypeableFrom(element) {
+    let current = element;
 
-    const currentValue = target.value || '';
-    const newValue = currentValue + char;
+    while (current && current !== document.documentElement) {
+      if (isEditableInput(current) || isTextArea(current) || isContentEditable(current)) {
+        return current;
+      }
 
-    if (nativeInputValueSetter) {
-      nativeInputValueSetter.call(target, newValue);
-    } else {
-      target.value = newValue;
+      if (current.shadowRoot) {
+        const shadowInput = queryShadow(current.shadowRoot, "input, textarea, [contenteditable='true'], [contenteditable='']");
+        if (shadowInput && (isEditableInput(shadowInput) || isTextArea(shadowInput) || isContentEditable(shadowInput))) {
+          return shadowInput;
+        }
+      }
+
+      current = current.parentElement;
     }
 
-    target.dispatchEvent(new Event('input', { bubbles: true }));
-    target.dispatchEvent(new Event('change', { bubbles: true }));
+    return null;
   }
 
-  function deleteCharStandard(target) {
-    const currentValue = target.value || '';
-    if (currentValue.length === 0) return;
-
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      target.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-      'value'
-    )?.set;
-
-    const newValue = currentValue.slice(0, -1);
-
-    if (nativeInputValueSetter) {
-      nativeInputValueSetter.call(target, newValue);
-    } else {
-      target.value = newValue;
+  function findGoogleDocsTarget() {
+    const textEventIframe = document.querySelector("iframe.docs-texteventtarget-iframe, .docs-texteventtarget-iframe iframe");
+    if (textEventIframe) {
+      try {
+        const frameDoc = textEventIframe.contentDocument;
+        if (frameDoc && frameDoc.body) {
+          frameDoc.body.focus();
+          return {
+            target: frameDoc.body,
+            eventView: textEventIframe.contentWindow || window,
+            strategy: "google-docs"
+          };
+        }
+      } catch (_error) {
+        // Cross-origin access can fail in some Docs surfaces; fall back below.
+      }
     }
 
-    target.dispatchEvent(new Event('input', { bubbles: true }));
-    target.dispatchEvent(new Event('change', { bubbles: true }));
+    const candidates = [
+      document.querySelector(".docs-texteventtarget-iframe"),
+      document.querySelector(".docs-texteventtarget"),
+      document.querySelector(".kix-canvas-tile-content"),
+      document.querySelector("[contenteditable='true']"),
+      document.activeElement
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (candidate instanceof HTMLIFrameElement) {
+        try {
+          if (candidate.contentDocument && candidate.contentDocument.body) {
+            candidate.contentDocument.body.focus();
+            return {
+              target: candidate.contentDocument.body,
+              eventView: candidate.contentWindow || window,
+              strategy: "google-docs"
+            };
+          }
+        } catch (_error) {
+          continue;
+        }
+      }
+
+      if (candidate instanceof HTMLElement) {
+        candidate.focus();
+        return {
+          target: candidate,
+          eventView: window,
+          strategy: "google-docs"
+        };
+      }
+    }
+
+    return null;
   }
 
-  function typeCharContentEditable(char) {
-    target.focus();
+  function isLikelyActiveFrame() {
+    if (document.hasFocus()) {
+      return true;
+    }
 
-    if (document.queryCommandSupported('insertText') && document.queryCommandSupported('insertText')) {
-      document.execCommand('insertText', false, char);
+    const active = document.activeElement;
+    return Boolean(
+      active &&
+      active !== document.body &&
+      active !== document.documentElement &&
+      (active.tagName === "IFRAME" ||
+        isEditableInput(active) ||
+        isTextArea(active) ||
+        isContentEditable(active))
+    );
+  }
+
+  function getTargetContext() {
+    if (isGoogleDocsPage()) {
+      const docsTarget = findGoogleDocsTarget();
+      if (docsTarget) {
+        return docsTarget;
+      }
+    }
+
+    const active = composedActiveElement();
+    const target = findTypeableFrom(active);
+    if (!target) {
+      return null;
+    }
+
+    if (isEditableInput(target) || isTextArea(target)) {
+      return { target, eventView: window, strategy: "standard" };
+    }
+
+    if (isContentEditable(target)) {
+      return { target, eventView: window, strategy: "contenteditable" };
+    }
+
+    return null;
+  }
+
+  function getKeyInfo(char) {
+    if (char === "\n") {
+      return { key: "Enter", code: "Enter", keyCode: 13, which: 13 };
+    }
+    if (char === "\t") {
+      return { key: "Tab", code: "Tab", keyCode: 9, which: 9 };
+    }
+    if (char === " ") {
+      return { key: " ", code: "Space", keyCode: 32, which: 32 };
+    }
+    if (char === "\b") {
+      return { key: "Backspace", code: "Backspace", keyCode: 8, which: 8 };
+    }
+    const upper = char.length === 1 ? char.toUpperCase() : char;
+    return {
+      key: char,
+      code: /^[a-z]$/i.test(char) ? `Key${upper}` : "",
+      keyCode: char.length === 1 ? char.charCodeAt(0) : 0,
+      which: char.length === 1 ? char.charCodeAt(0) : 0
+    };
+  }
+
+  function dispatchKeyboard(target, type, char, eventView = window) {
+    const keyInfo = getKeyInfo(char);
+    const event = new eventView.KeyboardEvent(type, {
+      key: keyInfo.key,
+      code: keyInfo.code,
+      keyCode: keyInfo.keyCode,
+      which: keyInfo.which,
+      bubbles: true,
+      cancelable: true,
+      composed: true
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  function dispatchInput(target, inputType, data, eventView = window) {
+    const event = new eventView.InputEvent("input", {
+      bubbles: true,
+      cancelable: false,
+      composed: true,
+      inputType,
+      data
+    });
+    target.dispatchEvent(event);
+  }
+
+  function dispatchBeforeInput(target, inputType, data, eventView = window) {
+    const event = new eventView.InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      inputType,
+      data
+    });
+    target.dispatchEvent(event);
+    return event;
+  }
+
+  function dispatchChange(target) {
+    target.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function getTextSelection(element) {
+    try {
+      if (typeof element.selectionStart === "number" && typeof element.selectionEnd === "number") {
+        return {
+          start: element.selectionStart,
+          end: element.selectionEnd
+        };
+      }
+    } catch (_error) {
+      // Some input types, including email in certain browsers, do not expose text selection.
+    }
+
+    return {
+      start: element.value.length,
+      end: element.value.length
+    };
+  }
+
+  function setTextSelection(element, position) {
+    try {
+      if (typeof element.setSelectionRange === "function") {
+        element.setSelectionRange(position, position);
+      }
+    } catch (_error) {
+      // Unsupported input types still receive the updated value and input event.
+    }
+  }
+
+  function setNativeValue(element, value) {
+    const prototype = element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, "value");
+
+    if (descriptor && typeof descriptor.set === "function") {
+      descriptor.set.call(element, value);
     } else {
-      const selection = window.getSelection();
-      if (selection.rangeCount > 0) {
+      element.value = value;
+    }
+  }
+
+  function insertIntoStandard(element, char) {
+    element.focus();
+
+    if (char === "\b") {
+      const { start, end } = getTextSelection(element);
+      const deleteStart = start === end ? Math.max(0, start - 1) : start;
+      const nextValue = element.value.slice(0, deleteStart) + element.value.slice(end);
+      setNativeValue(element, nextValue);
+      setTextSelection(element, deleteStart);
+      dispatchInput(element, "deleteContentBackward", null);
+      dispatchChange(element);
+      return;
+    }
+
+    const { start, end } = getTextSelection(element);
+    const nextValue = element.value.slice(0, start) + char + element.value.slice(end);
+    setNativeValue(element, nextValue);
+    const nextCaret = start + char.length;
+    setTextSelection(element, nextCaret);
+    dispatchInput(element, char === "\n" ? "insertLineBreak" : "insertText", char);
+    dispatchChange(element);
+  }
+
+  function insertIntoContentEditable(element, char) {
+    element.focus();
+
+    if (char === "\b") {
+      dispatchKeyboard(element, "keydown", "\b");
+      document.execCommand("delete", false);
+      dispatchInput(element, "deleteContentBackward", null);
+      dispatchKeyboard(element, "keyup", "\b");
+      return;
+    }
+
+    dispatchKeyboard(element, "keydown", char);
+    dispatchKeyboard(element, "keypress", char);
+    const inputType = char === "\n" ? "insertLineBreak" : "insertText";
+    dispatchBeforeInput(element, inputType, char);
+
+    const inserted = char === "\n"
+      ? document.execCommand("insertLineBreak", false)
+      : document.execCommand("insertText", false, char);
+
+    if (!inserted) {
+      const selection = document.getSelection();
+      if (selection && selection.rangeCount) {
         const range = selection.getRangeAt(0);
         range.deleteContents();
-
-        const textNode = document.createTextNode(char);
-        range.insertNode(textNode);
-        range.setStartAfter(textNode);
-        range.collapse(true);
+        range.insertNode(document.createTextNode(char));
+        range.collapse(false);
         selection.removeAllRanges();
         selection.addRange(range);
       }
     }
+
+    dispatchInput(element, inputType, char);
+    dispatchKeyboard(element, "keyup", char);
   }
 
-  function deleteCharContentEditable() {
+  function insertIntoGoogleDocs(targetContext, char) {
+    const { target, eventView } = targetContext;
     target.focus();
 
-    const selection = window.getSelection();
-    if (selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-
-      if (range.collapsed && range.startContainer.nodeType === Node.TEXT_NODE) {
-        const textNode = range.startContainer;
-        const offset = range.startOffset;
-
-        if (offset > 0) {
-          const newText = textNode.textContent.slice(0, -1);
-          textNode.textContent = newText;
-
-          range.setStart(textNode, newText.length);
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      } else {
-        range.deleteContents();
-      }
+    if (char === "\b") {
+      dispatchKeyboard(target, "keydown", "\b", eventView);
+      dispatchBeforeInput(target, "deleteContentBackward", null, eventView);
+      dispatchInput(target, "deleteContentBackward", null, eventView);
+      dispatchKeyboard(target, "keyup", "\b", eventView);
+      return;
     }
 
-    target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+    dispatchKeyboard(target, "keydown", char, eventView);
+    dispatchKeyboard(target, "keypress", char, eventView);
+    dispatchBeforeInput(target, char === "\n" ? "insertLineBreak" : "insertText", char, eventView);
+    dispatchInput(target, char === "\n" ? "insertLineBreak" : "insertText", char, eventView);
+    dispatchKeyboard(target, "keyup", char, eventView);
+  }
+
+  function randomWrongCharacter(correct) {
+    if (/\s/.test(correct)) {
+      return "x";
+    }
+    const alphabet = "abcdefghijklmnopqrstuvwxyz";
+    const lower = correct.toLowerCase();
+    let wrong = alphabet[Math.floor(Math.random() * alphabet.length)];
+    if (wrong === lower) {
+      wrong = wrong === "z" ? "a" : alphabet[alphabet.indexOf(wrong) + 1];
+    }
+    return correct === lower ? wrong : wrong.toUpperCase();
+  }
+
+  function shouldMakeTypo(char) {
+    return state.typos && char.length === 1 && char !== "\b" && Math.random() < 0.025;
+  }
+
+  function charDelayMs() {
+    const safeWpm = Math.min(200, Math.max(20, Number(state.wpm) || 80));
+    const base = 60000 / (safeWpm * 5);
+    const variance = 10 + Math.random() * 20;
+    const signedVariance = Math.random() > 0.5 ? variance : -variance;
+    return Math.max(18, base + signedVariance);
+  }
+
+  function insertCharacter(char) {
+    if (!state.target || !state.strategy) {
+      return;
+    }
+
+    if (state.strategy === "google-docs") {
+      insertIntoGoogleDocs(state.target, char);
+      return;
+    }
+
+    if (state.strategy === "standard") {
+      insertIntoStandard(state.target.target || state.target, char);
+      return;
+    }
+
+    insertIntoContentEditable(state.target.target || state.target, char);
+  }
+
+  function scheduleNext(delay = charDelayMs()) {
+    stopTimer();
+    state.timer = setTimeout(typeNext, delay);
   }
 
   function typeNext() {
-    if (!typingState.isTyping || typingState.isPaused) return;
-
-    let target = typingState.targetElement;
-
-    if (!target || !document.contains(target)) {
-      target = findEditableElement();
-      typingState.targetElement = target;
-    }
-
-    if (!target) {
-      chrome.runtime.sendMessage({
-        action: 'error',
-        message: 'No input field focused. Please click on a text field.'
-      });
-      stopTyping();
+    if (!state.active || state.stopped || state.paused) {
       return;
     }
 
-    if (typingState.index >= typingState.text.length) {
-      chrome.runtime.sendMessage({
-        action: 'completed',
-        total: typingState.text.length
-      });
-      stopTyping();
+    if (state.index >= state.total) {
+      state.active = false;
+      state.stopped = false;
+      stopTimer();
+      sendStatus({ state: "done" });
       return;
     }
 
-    const char = typingState.text[typingState.index];
-    const shouldMakeTypo = typingState.includeTypos && Math.random() < 0.03;
-
-    if (shouldMakeTypo) {
-      const wrongChars = 'qwertyuiopasdfghjkl;zxcvbnm,./';
-      const wrongChar = wrongChars[Math.floor(Math.random() * wrongChars.length)];
-
-      if (isInputOrTextarea(target)) {
-        typeCharStandard(wrongChar, target);
-      } else {
-        typeCharContentEditable(wrongChar);
-      }
-
-      typingState.timeoutId = setTimeout(() => {
-        if (isInputOrTextarea(target)) {
-          deleteCharStandard(target);
-        } else {
-          deleteCharContentEditable();
+    const char = state.text[state.index];
+    if (shouldMakeTypo(char)) {
+      const wrong = randomWrongCharacter(char);
+      insertCharacter(wrong);
+      stopTimer();
+      state.timer = setTimeout(() => {
+        if (!state.active || state.paused || state.stopped) {
+          return;
         }
-
-        typingState.timeoutId = setTimeout(() => {
-          if (isInputOrTextarea(target)) {
-            typeCharStandard(char, target);
-          } else {
-            typeCharContentEditable(char);
+        insertCharacter("\b");
+        state.timer = setTimeout(() => {
+          if (!state.active || state.paused || state.stopped) {
+            return;
           }
-          typingState.index++;
-
-          chrome.runtime.sendMessage({
-            action: 'progress',
-            typed: typingState.index,
-            total: typingState.text.length,
-            status: 'Typing...'
-          });
-
+          insertCharacter(char);
+          state.index += 1;
+          sendStatus();
           scheduleNext();
-        }, getDelayForChar(typingState.wpm));
-      }, getDelayForChar(typingState.wpm));
-
-    } else {
-      if (isInputOrTextarea(target)) {
-        typeCharStandard(char, target);
-      } else {
-        typeCharContentEditable(char);
-      }
-      typingState.index++;
-
-      chrome.runtime.sendMessage({
-        action: 'progress',
-        typed: typingState.index,
-        total: typingState.text.length,
-        status: 'Typing...'
-      });
-
-      scheduleNext();
-    }
-  }
-
-  function scheduleNext() {
-    if (!typingState.isTyping || typingState.isPaused) return;
-    const delay = getDelayForChar(typingState.wpm);
-    typingState.timeoutId = setTimeout(typeNext, delay);
-  }
-
-  function startTyping(text, wpm, includeTypos) {
-    if (typingState.timeoutId) {
-      clearTimeout(typingState.timeoutId);
-    }
-
-    const target = findEditableElement();
-
-    typingState = {
-      isTyping: true,
-      isPaused: false,
-      text: text,
-      index: 0,
-      wpm: wpm,
-      includeTypos: includeTypos,
-      timeoutId: null,
-      targetElement: target
-    };
-
-    if (!target) {
-      chrome.runtime.sendMessage({
-        action: 'error',
-        message: 'No input field focused. Please click on a text field.'
-      });
+        }, 35 + Math.random() * 60);
+      }, 55 + Math.random() * 95);
       return;
     }
 
-    chrome.runtime.sendMessage({ action: 'started' });
-    typeNext();
+    insertCharacter(char);
+    state.index += 1;
+    sendStatus();
+    scheduleNext();
+  }
+
+  function startTyping({ text, wpm, typos }, targetContext) {
+    stopTimer();
+    state.active = true;
+    state.paused = false;
+    state.stopped = false;
+    state.text = String(text || "");
+    state.index = 0;
+    state.total = state.text.length;
+    state.wpm = wpm;
+    state.typos = Boolean(typos);
+    state.target = targetContext;
+    state.strategy = targetContext.strategy;
+
+    sendStatus();
+    scheduleNext(80);
+    return { ok: true };
   }
 
   function pauseTyping() {
-    if (!typingState.isTyping) return;
-    if (typingState.timeoutId) {
-      clearTimeout(typingState.timeoutId);
-      typingState.timeoutId = null;
+    if (!state.active || state.paused) {
+      return { ok: true };
     }
-    typingState.isPaused = true;
-    chrome.runtime.sendMessage({ action: 'paused' });
+    state.paused = true;
+    stopTimer();
+    sendStatus({ state: "paused" });
+    return { ok: true };
   }
 
   function resumeTyping() {
-    if (!typingState.isTyping || !typingState.isPaused) return;
-    typingState.isPaused = false;
-    typeNext();
+    if (!state.active || !state.paused) {
+      return { ok: true };
+    }
+    state.paused = false;
+    sendStatus();
+    scheduleNext(50);
+    return { ok: true };
+  }
+
+  function statusSnapshot() {
+    return {
+      ok: true,
+      state: state.paused ? "paused" : state.active ? "typing" : state.stopped ? "stopped" : "done",
+      typed: state.index,
+      total: state.total,
+      wpm: state.wpm,
+      typos: state.typos
+    };
+  }
+
+  function updateRuntimeSettings({ wpm, typos }) {
+    if (Number.isFinite(Number(wpm))) {
+      state.wpm = Math.min(200, Math.max(20, Number(wpm)));
+    }
+    if (typeof typos === "boolean") {
+      state.typos = typos;
+    }
+    return statusSnapshot();
   }
 
   function stopTyping() {
-    if (typingState.timeoutId) {
-      clearTimeout(typingState.timeoutId);
-      typingState.timeoutId = null;
-    }
-    typingState.isTyping = false;
-    typingState.isPaused = false;
-    chrome.runtime.sendMessage({ action: 'stopped' });
+    const typed = state.index;
+    const total = state.total;
+    resetRun();
+    state.index = typed;
+    state.total = total;
+    sendStatus({ state: "stopped", typed, total });
+    return { ok: true };
   }
 
-  document.addEventListener('focusout', (e) => {
-    if (typingState.isTyping && !typingState.isPaused) {
-      const activeEl = document.activeElement;
-      const relatedTarget = e.relatedTarget;
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (!message || message.source !== MESSAGE_SOURCE) {
+      return false;
+    }
 
-      if (relatedTarget === null || !(activeEl?.contains?.(relatedTarget) || activeEl === relatedTarget)) {
-        chrome.runtime.sendMessage({ action: 'focusLost' });
+    if (message.command === "start") {
+      const targetContext = isLikelyActiveFrame() ? getTargetContext() : null;
+      if (targetContext) {
+        sendResponse(startTyping(message, targetContext));
+      } else {
+        setTimeout(() => {
+          sendResponse({ ok: false, error: "Please click on a text field first" });
+        }, 150);
       }
+      return true;
     }
-  });
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && typingState.isTyping && !typingState.isPaused) {
-      pauseTyping();
+    if (message.command === "pause") {
+      sendResponse(pauseTyping());
+      return true;
     }
-  });
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    switch (message.action) {
-      case 'start':
-        startTyping(message.text, message.wpm, message.includeTypos);
-        break;
-      case 'pause':
-        pauseTyping();
-        break;
-      case 'resume':
-        resumeTyping();
-        break;
-      case 'stop':
-        stopTyping();
-        break;
-      case 'debug':
-        const target = findEditableElement();
-        chrome.runtime.sendMessage({
-          action: 'debug',
-          info: JSON.stringify({
-            activeTag: document.activeElement?.tagName,
-            activeCE: document.activeElement?.contentEditable,
-            activeValue: document.activeElement?.value?.slice(0, 50),
-            foundTarget: !!target,
-            targetTag: target?.tagName,
-            targetCE: target?.contentEditable
-          }, null, 2)
-        });
-        break;
+    if (message.command === "resume") {
+      updateRuntimeSettings(message);
+      sendResponse(resumeTyping());
+      return true;
     }
-    sendResponse({ received: true });
+
+    if (message.command === "stop") {
+      sendResponse(stopTyping());
+      return true;
+    }
+
+    if (message.command === "getStatus") {
+      if (state.active || state.paused || !state.stopped) {
+        sendResponse(statusSnapshot());
+      } else {
+        setTimeout(() => {
+          sendResponse(statusSnapshot());
+        }, 100);
+      }
+      return true;
+    }
+
+    if (message.command === "updateSettings") {
+      sendResponse(updateRuntimeSettings(message));
+      return true;
+    }
+
+    sendResponse({ ok: false, error: "Unknown command." });
     return true;
+  });
+
+  window.addEventListener("beforeunload", () => {
+    resetRun();
   });
 })();
